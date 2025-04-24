@@ -49,12 +49,12 @@ def get_output_for_prog_loss(inputs, max_iters, net):
     k = randrange(1, max_iters - n + 1)
 
     if n > 0:
-        _, interim_thought, _ = net(inputs, iters_to_do=n)
+        _, interim_thought = net(inputs, iters_to_do=n)
         interim_thought = interim_thought.detach()
     else:
         interim_thought = None
 
-    outputs, _, _ = net(inputs, iters_elapsed=n, iters_to_do=k, interim_thought=interim_thought)
+    outputs, _ = net(inputs, iters_elapsed=n, iters_to_do=k, interim_thought=interim_thought)
     return outputs, k
 
 
@@ -66,7 +66,6 @@ def train(net, loaders, mode, train_setup, device):
     return train_loss, acc
 
 
-################### TOUCHED THIS BUT UNSUREE ######################
 def train_progressive(net, loaders, train_setup, device):
     trainloader = loaders["train"]
     net.train()
@@ -79,69 +78,47 @@ def train_progressive(net, loaders, train_setup, device):
     problem = train_setup.problem
     clip = train_setup.clip
     criterion = torch.nn.CrossEntropyLoss(reduction="none")
-    
+
     train_loss = 0
     correct = 0
     total = 0
-    
-    use_intermediate = hasattr(net, 'output_space') and net.output_space is True
 
     for batch_idx, (inputs, targets) in enumerate(tqdm(trainloader, leave=False)):
         inputs, targets = inputs.to(device), targets.to(device).long()
         targets = targets.view(targets.size(0), -1)
-
         if problem == "mazes":
             mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
 
         optimizer.zero_grad()
 
-        # === Final iteration loss ===
-        outputs_max_iters, _, all_outputs = net(inputs, iters_to_do=max_iters)
-        # it was: outputs_max_iters, _ = net(inputs, iters_to_do=max_iters)
+        # get fully unrolled loss if alpha is not 1 (if it is 1, this loss term is not used
+        # so we save time by settign it equal to 0).
+        outputs_max_iters, _ = net(inputs, iters_to_do=max_iters)
         if alpha != 1:
             outputs_max_iters = outputs_max_iters.view(outputs_max_iters.size(0),
-                                                            outputs_max_iters.size(1), -1)
+                                                       outputs_max_iters.size(1), -1)
             loss_max_iters = criterion(outputs_max_iters, targets)
         else:
             loss_max_iters = torch.zeros_like(targets).float()
 
-        # === Intermediate supervision loss ===
+        # get progressive loss if alpha is not 0 (if it is 0, this loss term is not used
+        # so we save time by setting it equal to 0).
         if alpha != 0:
-            if problem == "mazes" and use_intermediate:
-                # Compute intermediate loss with BFS-generated supervision
-                loss_list = []
-                for b in range(inputs.size(0)):
-                    gt_steps = get_intermediate_path_masks(inputs[b].cpu())
-                    if len(gt_steps) == 0:
-                        continue  # no valid path
-                    for t in range(min(len(gt_steps), max_iters)):
-                        pred = all_outputs[b, t]  # [2, H, W]
-                        target = torch.tensor(gt_steps[t], device=pred.device, dtype=torch.long)
-                        loss_list.append(criterion(pred, target).mean())
-                if loss_list:
-                    loss_progressive_mean = torch.stack(loss_list).mean()
-                else:
-                    loss_progressive_mean = torch.tensor(0.0, device=inputs.device)
-            else:
-                # Fallback to default progressive mode
-                outputs, k = get_output_for_prog_loss(inputs, max_iters, net)
-                outputs = outputs.view(outputs.size(0), outputs.size(1), -1)
-                loss_progressive = criterion(outputs, targets)
-                if problem == "mazes":
-                    loss_progressive = (loss_progressive * mask)
-                    loss_progressive = loss_progressive[mask > 0]
-                loss_progressive_mean = loss_progressive.mean()
+            outputs, k = get_output_for_prog_loss(inputs, max_iters, net)
+            outputs = outputs.view(outputs.size(0), outputs.size(1), -1)
+            loss_progressive = criterion(outputs, targets)
         else:
-            loss_progressive_mean = torch.tensor(0.0, device=inputs.device)
+            loss_progressive = torch.zeros_like(targets).float()
 
-        # === Masking for final loss, for both default and intermediate supervision ===
         if problem == "mazes":
             loss_max_iters = (loss_max_iters * mask)
             loss_max_iters = loss_max_iters[mask > 0]
+            loss_progressive = (loss_progressive * mask)
+            loss_progressive = loss_progressive[mask > 0]
 
         loss_max_iters_mean = loss_max_iters.mean()
+        loss_progressive_mean = loss_progressive.mean()
 
-        # === Combine losses ===
         loss = (1 - alpha) * loss_max_iters_mean + alpha * loss_progressive_mean
         loss.backward()
 

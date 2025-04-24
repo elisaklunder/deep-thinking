@@ -1,12 +1,12 @@
-""" dt_net_2d.py
-    DeepThinking network 2D.
+"""dt_net_2d.py
+DeepThinking network 2D.
 
-    Collaboratively developed
-    by Avi Schwarzschild, Eitan Borgnia,
-    Arpit Bansal, and Zeyad Emam.
+Collaboratively developed
+by Avi Schwarzschild, Eitan Borgnia,
+Arpit Bansal, and Zeyad Emam.
 
-    Developed for DeepThinking project
-    October 2021
+Developed for DeepThinking project
+October 2021
 """
 
 import torch
@@ -23,26 +23,49 @@ from .blocks import BasicBlock2D as BasicBlock
 class DTNet(nn.Module):
     """DeepThinking Network 2D model class"""
 
-    def __init__(self, block, num_blocks, width, in_channels=3, recall=True, group_norm=False, **kwargs):
+    def __init__(
+        self,
+        block,
+        num_blocks,
+        width,
+        in_channels=3,
+        recall=True,
+        group_norm=False,
+        output_space=False,
+        **kwargs,
+    ):
         super().__init__()
 
         self.recall = recall
-        self.width = int(width)
+        self.output_space = output_space
+        self.original_width = int(width)  # frozen version for input channels
+        self.width = self.original_width  # mutable version for layer construction
         self.group_norm = group_norm
-        proj_conv = nn.Conv2d(in_channels, width, kernel_size=3,
+        self.in_channels = in_channels
+
+        proj_conv = nn.Conv2d(in_channels, self.original_width, kernel_size=3,
                               stride=1, padding=1, bias=False)
 
-        conv_recall = nn.Conv2d(width + in_channels, width, kernel_size=3,
-                                stride=1, padding=1, bias=False)
+        conv_recall_output = nn.Conv2d(self.original_width + in_channels + 2, self.original_width, kernel_size=3,
+                                       stride=1, padding=1, bias=False)
+        conv_recall_only = nn.Conv2d(self.original_width + in_channels, self.original_width, kernel_size=3,
+                                     stride=1, padding=1, bias=False)
+        conv_output_only = nn.Conv2d(self.original_width + 2, self.original_width, kernel_size=3,
+                                     stride=1, padding=1, bias=False)
 
-        recur_layers = []
-        if recall:
-            recur_layers.append(conv_recall)
+        if recall and output_space:
+            recur_layers = [conv_recall_output]
+        elif recall:
+            recur_layers = [conv_recall_only]
+        elif output_space:
+            recur_layers = [conv_output_only]
+        else:
+            recur_layers = []
 
         for i in range(len(num_blocks)):
-            recur_layers.append(self._make_layer(block, width, num_blocks[i], stride=1))
+            recur_layers.append(self._make_layer(block, self.original_width, num_blocks[i], stride=1))
 
-        head_conv1 = nn.Conv2d(width, 32, kernel_size=3,
+        head_conv1 = nn.Conv2d(self.width, 32, kernel_size=3,
                                stride=1, padding=1, bias=False)
         head_conv2 = nn.Conv2d(32, 8, kernel_size=3,
                                stride=1, padding=1, bias=False)
@@ -54,47 +77,75 @@ class DTNet(nn.Module):
         self.head = nn.Sequential(head_conv1, nn.ReLU(),
                                   head_conv2, nn.ReLU(),
                                   head_conv3)
-
+        
     def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1]*(num_blocks-1)
+        strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for strd in strides:
             layers.append(block(self.width, planes, strd, group_norm=self.group_norm))
             self.width = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, iters_to_do, interim_thought=None, **kwargs):
+    def forward(self, x, iters_to_do, interim_thought=None, prev_output=None, **kwargs):
         initial_thought = self.projection(x)
 
         if interim_thought is None:
             interim_thought = initial_thought
 
-        all_outputs = torch.zeros((x.size(0), iters_to_do, 2, x.size(2), x.size(3))).to(x.device)
+        batch_size, _, H, W = x.size()
+        all_outputs = torch.zeros((batch_size, iters_to_do, 2, H, W)).to(x.device)
 
         for i in range(iters_to_do):
+            concat_inputs = [interim_thought]
+
             if self.recall:
-                interim_thought = torch.cat([interim_thought, x], 1)
-            interim_thought = self.recur_block(interim_thought)
+                concat_inputs.append(x)
+            if self.output_space:
+                if prev_output is None:
+                    prev_output = torch.zeros((batch_size, 2, H, W)).to(x.device)
+                concat_inputs.append(prev_output)
+
+            recur_input = torch.cat(concat_inputs, dim=1)
+            interim_thought = self.recur_block(recur_input)
             out = self.head(interim_thought)
             all_outputs[:, i] = out
+            prev_output = out.detach()  # detach to avoid unrolling the full graph through all outputs, 
+                                        # not sure!!!
 
         if self.training:
-            return out, interim_thought
-
-        return all_outputs
+            # it was return out, interim_thought
+            return out, interim_thought, all_outputs
+        else:
+            return all_outputs
 
 
 def dt_net_2d(width, **kwargs):
-    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False)
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False, output_space=False)
 
 
 def dt_net_recall_2d(width, **kwargs):
-    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True)
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True, output_space=False)
 
 
 def dt_net_gn_2d(width, **kwargs):
-    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False, group_norm=True)
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False, group_norm=True, output_space=False)
 
 
 def dt_net_recall_gn_2d(width, **kwargs):
-    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True, group_norm=True)
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True, group_norm=True, output_space=False)
+
+
+def dt_net_outputspace_2d(width, **kwargs):
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False, output_space=True)
+
+
+def dt_net_outputspace_gn_2d(width, **kwargs):
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=False, group_norm=True, output_space=True)
+
+
+def dt_net_recall_outputspace_2d(width, **kwargs):
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True, output_space=True)
+
+
+def dt_net_recall_outputspace_gn_2d(width, **kwargs):
+    return DTNet(BasicBlock, [2], width=width, in_channels=kwargs["in_channels"], recall=True, group_norm=True, output_space=True)
