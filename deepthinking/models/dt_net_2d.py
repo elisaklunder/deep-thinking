@@ -37,7 +37,7 @@ class DTNet(nn.Module):
         super().__init__()
 
         self.recall = recall
-        self.output_space = output_space
+        self.output_space = output_space    
         self.original_width = int(width)  # frozen version for input channels
         self.width = self.original_width  # mutable version for layer construction
         self.group_norm = group_norm
@@ -46,10 +46,12 @@ class DTNet(nn.Module):
         proj_conv = nn.Conv2d(in_channels, self.original_width, kernel_size=3,
                               stride=1, padding=1, bias=False)
 
+        # added this
         conv_recall_output = nn.Conv2d(self.original_width + in_channels + 2, self.original_width, kernel_size=3,
                                        stride=1, padding=1, bias=False)
         conv_recall_only = nn.Conv2d(self.original_width + in_channels, self.original_width, kernel_size=3,
                                      stride=1, padding=1, bias=False)
+        # added this
         conv_output_only = nn.Conv2d(self.original_width + 2, self.original_width, kernel_size=3,
                                      stride=1, padding=1, bias=False)
 
@@ -100,6 +102,8 @@ class DTNet(nn.Module):
 
             if self.recall:
                 concat_inputs.append(x)
+                
+            # changed from here
             if self.output_space:
                 if prev_output is None:
                     prev_output = torch.zeros((batch_size, 2, H, W)).to(x.device)

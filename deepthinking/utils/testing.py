@@ -21,17 +21,26 @@ from tqdm import tqdm
 # pylint: disable=R0912, R0915, E1101, E1102, C0103, W0702, R0914, C0116, C0115, C0114
 
 
-def test(net, loaders, mode, iters, problem, device):
+def test(net, loaders, mode, iters, problem, device, return_outputs=False):
     accs = []
-    for loader in loaders:
+    outputs = None
+    for i, loader in enumerate(loaders):
         if mode == "default":
-            accuracy = test_default(net, loader, iters, problem, device)
+            if return_outputs and i == 0:
+                accuracy, collected = test_default(net, loader, iters, problem, device, return_outputs=True)
+                outputs = collected
+            else:
+                accuracy = test_default(net, loader, iters, problem, device)
         elif mode == "max_conf":
             accuracy = test_max_conf(net, loader, iters, problem, device)
         else:
             raise ValueError(f"{ic.format()}: test_{mode}() not implemented.")
         accs.append(accuracy)
-    return accs
+    
+    if return_outputs:
+        return accs, outputs  # outputs only for test set
+    else:
+        return accs
 
 
 def get_predicted(inputs, outputs, problem):
@@ -52,17 +61,20 @@ def get_predicted(inputs, outputs, problem):
     return predicted
 
 
-def test_default(net, testloader, iters, problem, device):
+def test_default(net, testloader, iters, problem, device, return_outputs=False):
     max_iters = max(iters)
     net.eval()
     corrects = torch.zeros(max_iters)
     total = 0
+    all_collected_outputs = [] 
 
     with torch.no_grad():
         for inputs, targets in tqdm(testloader, leave=False):
             inputs, targets = inputs.to(device), targets.to(device)
 
             all_outputs = net(inputs, iters_to_do=max_iters)
+            if return_outputs:
+                all_collected_outputs.append(all_outputs.cpu()) 
 
             for i in range(all_outputs.size(1)):
                 outputs = all_outputs[:, i]
@@ -76,7 +88,11 @@ def test_default(net, testloader, iters, problem, device):
     ret_acc = {}
     for ite in iters:
         ret_acc[ite] = accuracy[ite-1].item()
-    return ret_acc
+         
+    if return_outputs:
+        return ret_acc, torch.cat(all_collected_outputs, dim=0)  # (batch_size_total, max_iters, 2, H, W)
+    else:
+        return ret_acc
 
 
 def test_max_conf(net, testloader, iters, problem, device):

@@ -1,5 +1,5 @@
 defaults:
-  - problem: prefix_sums
+  - problem: mazes
   - override hydra/job_logging: custom
   - _self_
 
@@ -21,4 +21,5 @@ problem:
     model_path:
 
 quick_test: False
+plot_outputs: False  
 
