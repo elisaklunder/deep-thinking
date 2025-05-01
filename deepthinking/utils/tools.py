@@ -21,7 +21,8 @@ import deepthinking.models as models
 from .mazes_data import prepare_maze_loader
 from .prefix_sums_data import prepare_prefix_loader
 from .chess_data import prepare_chess_loader
-from .. import adjectives, names
+from deepthinking.adjectives import adjectives  
+from deepthinking.names       import names     
 
 from .warmup import ExponentialWarmup, LinearWarmup
 
