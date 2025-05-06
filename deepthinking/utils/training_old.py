@@ -18,7 +18,6 @@ from icecream import ic
 from tqdm import tqdm
 
 from deepthinking.utils.testing import get_predicted
-from deepthinking.utils.maze_solver import get_intermediate_path_masks
 
 
 # Ignore statemenst for pylint:

@@ -67,7 +67,8 @@ def main(cfg: DictConfig):
                                    clip=cfg.problem.hyp.clip,
                                    alpha=cfg.problem.hyp.alpha,
                                    max_iters=cfg.problem.model.max_iters,
-                                   problem=cfg.problem.name)
+                                   problem=cfg.problem.name,
+                                   mazesolver_mode=cfg.problem.hyp.mazesolver_mode)
     ####################################################
 
     ####################################################

@@ -1,9 +1,12 @@
+import math
 import os
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
+import numpy.ma as ma
 import seaborn as sns
+import torch
 from matplotlib.colors import LinearSegmentedColormap
 
 MAZE_INDEX = 8
@@ -49,38 +52,47 @@ def display_colored_maze(maze: np.ndarray) -> None:
 
 
 def plot_prediction_heatmap(
-    input_maze,
-    probs_seq,  # (T, H, W) – probabilities for “path”
-    steps,
+    input_maze,  # (3, H, W) uint8 – RGB maze
+    probs_seq,  # (T, H, W) float – probabilities
+    steps,  # list[int] – time‑steps you want to show
     title_prefix="sample_0",
     dpi=120,
+    *,
+    masks_per_row=10,
+    wall_colour=(0, 0, 0),
 ):
     """
-    Draw a heat-map for several iterations of the networks output.
+    Draw a heatmap for several iterations of the networks output,
+    masking out wall cells
     """
-
     os.makedirs("figures", exist_ok=True)
 
-    n_cols = len(steps) + 1
-    fig, axs = plt.subplots(1, n_cols, figsize=(4 * n_cols, 4), dpi=dpi)
+    n_panels = len(steps) + 1  # +1 for RGB maze
+    n_rows = math.ceil(n_panels / masks_per_row)
+    fig_w = 4 * masks_per_row
+    fig_h = 4 * n_rows
+    fig, axs = plt.subplots(n_rows, masks_per_row, figsize=(fig_w, fig_h), dpi=dpi)
+    axs = axs.ravel()
 
-    ax0 = axs[0]
     maze_rgb = np.transpose(input_maze, (1, 2, 0))  # (H, W, 3)
-    ax0.imshow(maze_rgb)
-    ax0.set_title("maze (RGB)")
-    ax0.axis("off")
+    wall_mask = np.all(maze_rgb == wall_colour, axis=-1)  # (H, W) bool
 
     _BLACK_RED_WHITE = LinearSegmentedColormap.from_list(
-        "black_red_white",
-        [(0.0, "#000000"), (0.5, "#ff0000"), (1.0, "#ffffff")],
-        N=256,
+        "black_red_white", [(0.0, "#000000"), (0.5, "#ff0000"), (1.0, "#ffffff")], N=256
     )
+    _BLACK_RED_WHITE.set_bad(color="#000000")
+
+    axs[0].imshow(maze_rgb)
+    axs[0].set_title("Input maze")
+    axs[0].axis("off")
 
     last_im = None
     for k, step in enumerate(steps, start=1):
         ax = axs[k]
+        # mask out wall cells
+        masked_probs = ma.array(probs_seq[step], mask=wall_mask)
         im = ax.imshow(
-            probs_seq[step],  # (H, W)
+            masked_probs,
             cmap=_BLACK_RED_WHITE,
             vmin=0.0,
             vmax=1.0,
@@ -90,37 +102,85 @@ def plot_prediction_heatmap(
         ax.set_title(f"step {step + 1}")
         ax.axis("off")
 
-    # shared colour-bar
+    for ax in axs[n_panels:]:
+        ax.set_visible(False)
+
     cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
     fig.colorbar(last_im, cax=cbar_ax, label="Path probability")
 
     fig.suptitle(title_prefix, fontsize=14)
     plt.tight_layout(rect=[0, 0, 0.9, 1])
-    plt.savefig(f"figures/heatmap_steps_{title_prefix}.png")
-    plt.close()
-    
-def plot_maze(inputs, targets, save_str):
+    fig.savefig(f"figures/heatmap_steps_{title_prefix}.png")
+    plt.close(fig)
+
+
+def plot_maze_and_target(input, targets, save_str=None):
     fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
     ax = axs[0]
-    ax.imshow(inputs.cpu().squeeze().permute(1, 2, 0))
+    ax.imshow(
+        np.transpose(input.squeeze(), (1, 2, 0))
+        if isinstance(input, np.ndarray)
+        else input.cpu().squeeze().permute(1, 2, 0)
+    )
 
-    ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
     ax.set_yticks([])
     ax.set_xticks([])
 
     ax = axs[1]
     sns.heatmap(targets, ax=ax, cbar=False, linewidths=0, square=True, rasterized=True)
 
-    ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
     ax.set_yticks([])
     ax.set_xticks([])
 
     plt.tight_layout()
+    if save_str is None:
+        save_str = (
+            f"figures/maze_example_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.png"
+        )
     plt.savefig(save_str, bbox_inches="tight")
     plt.close()
+
+
+def plot_maze_and_intermediate_masks(
+    inp, masks, masks_per_row=10, type="sometype", save_str=None
+):
+    n_masks = len(masks)
+    n_rows = (n_masks + masks_per_row - 1) // masks_per_row  # ceil div
+
+    fig, axs = plt.subplots(
+        n_rows + 1, masks_per_row, figsize=(2.0 * masks_per_row, 2.0 * (n_rows + 1))
+    )
+    axs = axs.ravel()
+
+    ax0 = axs[0]
+    if isinstance(inp, np.ndarray):
+        img = np.transpose(inp.squeeze(), (1, 2, 0))
+    else:
+        img = inp.cpu().squeeze().permute(1, 2, 0)
+    ax0.imshow(img)
+    ax0.axis("off")
+
+    for idx, mask in enumerate(masks, start=1):
+        ax = axs[idx]
+        sns.heatmap(
+            mask, ax=ax, cbar=False, xticklabels=False, yticklabels=False, linewidths=0
+        )
+        ax.axis("off")
+
+    for ax in axs[len(masks) + 1 :]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    if save_str is None:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_str = f"figures/masks_example_{type}-{ts}.png"
+    fig.savefig(save_str, bbox_inches="tight")
+    plt.close(fig)
 
 
 if __name__ == "__main__":
@@ -131,4 +191,6 @@ if __name__ == "__main__":
     targets_np = np.load(target_path)
     targets = torch.from_numpy(targets_np).float()
     MAZE_INDEX = 1
-    plot_maze(inputs[MAZE_INDEX], targets[MAZE_INDEX], f"maze_example_{MAZE_INDEX}.png")
+    input = inputs[MAZE_INDEX]
+    target = targets[MAZE_INDEX]
+    plot_maze_and_target(input, target)

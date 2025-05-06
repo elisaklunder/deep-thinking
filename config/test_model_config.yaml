@@ -17,9 +17,9 @@ problem:
   model:
     test_iterations:
       low: 30
-      high: 50
+      high: 100
     model_path:
 
 quick_test: False
-plot_outputs: False  
+plot_outputs: True  
 

@@ -38,6 +38,7 @@ class TrainingSetup:
     alpha: "typing.Any"
     max_iters: "typing.Any"
     problem: "typing.Any"
+    mazesolver_mode: "typing.Any"
 
 
 def build_oracle_batch(inputs_batch, solver: MazeSolver):
@@ -54,7 +55,7 @@ def build_oracle_batch(inputs_batch, solver: MazeSolver):
     lengths = []
     max_len = 0
     for b in range(inputs_batch.size(0)):
-        path_b = solver.get_intermediate_path_masks(inputs_batch[b].cpu().numpy())
+        path_b = solver.get_intermediate_supervision_masks(inputs_batch[b].cpu().numpy())
         paths.append(path_b)
         lengths.append(len(path_b))
         max_len = max(max_len, len(path_b))
@@ -130,7 +131,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
     clip = train_setup.clip
     criterion = torch.nn.CrossEntropyLoss(reduction="none")
 
-    solver = MazeSolver()
+    solver = MazeSolver(mode=train_setup.mazesolver_mode)
 
     train_loss = 0
     correct = 0
@@ -167,15 +168,17 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             for b, steps in enumerate(paths):
                 for t, mask_np in enumerate(steps[:T_max]):
                     oracle[b, t] = torch.from_numpy(mask_np)
+                    
+            pred_flat = all_outputs.view(B * T_max, C, H, W)   # (B*T, 2, H, W)
+            targ_flat = oracle.view(   B * T_max,     H, W)     # (B*T, H, W)
 
-            # compute CE only on valid time-steps
-            mask_valid = loss_mask(all_outputs, path_lens)  # (B,T_max)
-            pred_flat = all_outputs.permute(0, 1, 3, 4, 2).reshape(B * T_max, H * W, C)
-            targ_flat = oracle.reshape(B * T_max, H * W)
+            loss_map  = criterion(pred_flat, targ_flat)         # (B*T, H, W)
+            loss_map   = loss_map.view(B, T_max, H, W)          # (B, T, H, W)
 
-            interm_loss = criterion(pred_flat, targ_flat)
-            interm_loss = interm_loss.mean(2) # mean over pixels??
-            interm_loss = (interm_loss * mask_valid).sum() / mask_valid.sum()
+            mask_valid = loss_mask(all_outputs, path_lens)      # (B, T)  True where t<path_len
+            mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1) # (B, T, 1, 1)
+
+            interm_loss = (loss_map * mask_valid).sum() / mask_valid.sum()
 
         else:
             interm_loss = torch.tensor(0.0, device=inputs.device)

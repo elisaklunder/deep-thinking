@@ -1,11 +1,13 @@
-from collections import deque
 import os
+from collections import deque
 from typing import List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+from deepthinking.utils.plot import display_colored_maze, plot_maze_and_intermediate_masks
 
 # try to look at the actual outputs of the maze solver
 # see what incorrect turns it takes
@@ -35,8 +37,12 @@ class MazeSolver:
     shortest path remains.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, mode: Optional[str] = "incremental"):
+        self.mode = mode
+        if mode not in ["incremental", "reverse_exploration", "bfs"]:
+            raise ValueError(
+                f"Invalid mode '{mode}'. Use 'incremental', 'reverse_exploration' or 'bfs'."
+            )
 
     def _crop_outer_wall(self, rgb: RGB) -> Tuple[RGB, Tuple[int, int]]:
         """Crop outermost ring of pixels and return the offset."""
@@ -134,13 +140,15 @@ class MazeSolver:
             frames.append(m.copy())
         return frames
 
-    def get_intermediate_path_masks(self, input_rgb) -> List[np.ndarray]:
+    def get_incremental_path_masks(self, input_rgb) -> List[np.ndarray]:
         """Incrementally light up the optimal path."""
         rgb, offs = self._crop_outer_wall(input_rgb)
         free, start, goal = self._parse_maze(rgb)
         path, _ = self._bfs_trace(free, start, goal)
+
         if not path:
             return []
+
         H, W = input_rgb.shape[1:]
         return [
             self._mask_from_patches(path[:i], (H, W), offs)
@@ -173,6 +181,27 @@ class MazeSolver:
 
     import numpy as np
 
+    def get_bfs_masks(self, input_rgb) -> List[np.ndarray]:
+        """Return masks of the BFS discovery sequence."""
+        rgb, offs = self._crop_outer_wall(input_rgb)
+        free, start, goal = self._parse_maze(rgb)
+        optimal_path, discovered = self._bfs_trace(free, start, goal)
+
+        H, W = input_rgb.shape[1:]
+        discovery_masks = [
+            self._mask_from_patches(discovered[:i], (H, W), offs)
+            for i in range(1, len(discovered) + 1)
+        ]
+        discovery_masks.append(self._mask_from_patches(optimal_path, (H, W), offs))
+        return discovery_masks
+
+    def get_intermediate_supervision_masks(self, input_rgb) -> List[np.ndarray]:
+        if self.mode == "incremental":
+            return self.get_incremental_path_masks(input_rgb)
+        elif self.mode == "reverse_exploration":
+            return self.get_reverse_exploration_masks(input_rgb)
+        elif self.mode == "bfs":
+            return self.get_bfs_masks(input_rgb)
 
 def plot_solution_length_distribution(
     dataset_path: str,
@@ -188,20 +217,21 @@ def plot_solution_length_distribution(
     mazes = np.load(dataset_path)
     solver = MazeSolver()
 
-    inter_lengths, reverse_lengths = [], []
+    inter_lengths, reverse_lengths, bfs_lengths = [], [], []
     for maze in tqdm(mazes):
-        inter_lengths.append(len(solver.get_intermediate_path_masks(maze)))
+        inter_lengths.append(len(solver.get_incremental_path_masks(maze)))
         reverse_lengths.append(len(solver.get_reverse_exploration_masks(maze)))
+        bfs_lengths.append(len(solver.get_bfs_masks(maze)))
 
-    stats = pd.DataFrame({"intermediate": inter_lengths, "reverse": reverse_lengths})
+    stats = pd.DataFrame({"incremental": inter_lengths, "reverse": reverse_lengths, "bfs": bfs_lengths})
     print(stats.describe().to_string(float_format="%.2f"))
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True, dpi=120)
+    fig, axes = plt.subplots(1, 3, figsize=(14, 6), sharey=True, dpi=120)
 
     for ax, data, label in zip(
         axes,
-        [inter_lengths, reverse_lengths],
-        ["Optimal path frames", "Reverse-exploration frames"],
+        [inter_lengths, reverse_lengths, bfs_lengths],
+        ["Incremental path frames", "Reverse-exploration frames", "BFS frames"],
     ):
         bins = range(min(data), max(data) + 3, 2)
         ax.hist(data, bins=bins, edgecolor="black", alpha=0.85)
@@ -238,33 +268,30 @@ def plot_solution_length_distribution(
 
     if not os.path.exists("figures"):
         os.makedirs("figures")
-    fig.savefig(f"figures/length_dist_{dataset_name}", dpi=300)
-    
-    return inter_lengths, reverse_lengths, stats
+    fig.savefig(f"figures/lengths_dist_{dataset_name}", dpi=300)
+
+    return inter_lengths, reverse_lengths, bfs_lengths, stats
 
 
 if __name__ == "__main__":
     path = "data/maze_data_test_33/inputs.npy"
     inputs = np.load(path)
 
-    # MAZE_INDEX = 1
-    # print("Original maze:")
-    # from deepthinking.utils.plot import display_colored_maze
+    MAZE_INDEX = 1
+    print("Original maze:")    
 
-    # maze = inputs[MAZE_INDEX]
-    # display_colored_maze(maze)
+    maze = inputs[MAZE_INDEX]
+    display_colored_maze(maze)
 
-    # print("Path masks:")
-    # maze_solver = MazeSolver()
-    # masks = maze_solver.get_intermediate_path_masks(maze)
-    # for mask in masks:
-    #     display_colored_maze(mask)
-    #     print("\n")
+    maze_solver = MazeSolver()
 
-    # print("Exploration masks:")
-    # masks = maze_solver.get_reverse_exploration_masks(maze)
-    # for mask in masks:
-    #     display_colored_maze(mask)
-    #     print("\n")
-
-    inter_lengths, reverse_lengths, stats = plot_solution_length_distribution(path)
+    masks_incremental = maze_solver.get_incremental_path_masks(maze)
+    masks_reverse = maze_solver.get_reverse_exploration_masks(maze)
+    masks_bfs = maze_solver.get_bfs_masks(maze)
+    
+    # Plot the masks
+    # plot_maze_and_intermediate_masks(maze, masks_incremental, type="intermediate")
+    # plot_maze_and_intermediate_masks(maze, masks_reverse, type="reverse")
+    # plot_maze_and_intermediate_masks(maze, masks_bfs, type="bfs")
+    
+    inter_lengths, reverse_lengths, bfs_lengths, stats = plot_solution_length_distribution(path)
