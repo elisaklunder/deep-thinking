@@ -39,9 +39,10 @@ class TrainingSetup:
     max_iters: "typing.Any"
     problem: "typing.Any"
     mazesolver_mode: "typing.Any"
+    step: "typing.Any"
 
 
-def build_oracle_batch(inputs_batch, solver: MazeSolver):
+def build_oracle_batch(inputs_batch, solver: MazeSolver, step: int):
     """
     Args
         inputs : (B, 3, H, W) float tensor on GPU
@@ -55,7 +56,7 @@ def build_oracle_batch(inputs_batch, solver: MazeSolver):
     lengths = []
     max_len = 0
     for b in range(inputs_batch.size(0)):
-        path_b = solver.get_intermediate_supervision_masks(inputs_batch[b].cpu().numpy())
+        path_b = solver.get_intermediate_supervision_masks(inputs_batch[b].cpu().numpy(), step)
         paths.append(path_b)
         lengths.append(len(path_b))
         max_len = max(max_len, len(path_b))
@@ -147,7 +148,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
 
         if alpha != 0:
-            paths, path_lens, T_max = build_oracle_batch(inputs, solver)
+            paths, path_lens, T_max = build_oracle_batch(inputs, solver, train_setup.step)
 
         outputs_max_iters, _, all_outputs = net(inputs, iters_to_do=T_max)
 

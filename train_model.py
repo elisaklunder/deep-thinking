@@ -68,7 +68,8 @@ def main(cfg: DictConfig):
                                    alpha=cfg.problem.hyp.alpha,
                                    max_iters=cfg.problem.model.max_iters,
                                    problem=cfg.problem.name,
-                                   mazesolver_mode=cfg.problem.hyp.mazesolver_mode)
+                                   mazesolver_mode=cfg.problem.hyp.mazesolver_mode,
+                                   step=cfg.problem.hyp.step)
     ####################################################
 
     ####################################################

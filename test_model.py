@@ -20,7 +20,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 import deepthinking as dt
-from deepthinking.utils.plot import plot_prediction_heatmap
+from deepthinking.utils.plot import animate_prediction_sequence, plot_heatmap_sequence
 
 # Ignore statements for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),
@@ -53,6 +53,9 @@ def main(cfg: DictConfig):
         ("hyp", "optimizer"),
         ("hyp", "train_mode"),
         ("model", "width"),
+        ("hyp", "mazesolver_mode"),
+        ("hyp", "step"),
+        ("hyp", "train_batch_size"),
     ]
     for k1, k2 in cfg_keys_to_load:
         cfg["problem"][k1][k2] = training_args["problem"][k1][k2]
@@ -102,7 +105,10 @@ def main(cfg: DictConfig):
         val_acc, train_acc = None, None
 
     elif cfg.plot_outputs:
-        print("Testing with plot_outputs=True")
+        print(
+            "Testing with plot_outputs=True and test_mode=", cfg.problem.hyp.test_mode
+        )
+        plot_n = 5
 
         accs, test_outputs = dt.test(
             net,
@@ -112,23 +118,29 @@ def main(cfg: DictConfig):
             cfg.problem.name,
             device,
             return_outputs=True,
+            n_outputs=plot_n,
         )
 
         test_acc, val_acc, train_acc = accs
 
-        inputs, _ = next(iter(loaders["test"]))
+        inputs, targets = next(iter(loaders["test"]))
         inputs = inputs.to(device)
-        for idx in range(min(5, inputs.size(0))):
-            input_maze = inputs[idx].cpu().numpy()  # (3, H, W)
+        for idx in range(min(plot_n, inputs.size(0))):
             logits_seq = test_outputs[idx]  # (T, 2, H, W)
-            probs_seq = (
-                torch.softmax(logits_seq, dim=1)[:, 1].cpu().numpy()
-            )  # (T, H, W)
-            plot_prediction_heatmap(
-                input_maze=input_maze,
+            probs_seq = torch.softmax(logits_seq, dim=1)[:, 1].cpu().numpy()
+            plot_heatmap_sequence(
+                input_maze=inputs[idx].cpu().numpy(),
+                target=targets[idx].cpu().numpy(),
                 probs_seq=probs_seq,
                 steps=range(1, probs_seq.shape[0], 1),
                 title_prefix=f"sample_{idx}",
+            )
+            animate_prediction_sequence(
+                input_maze=inputs[idx].cpu().numpy(),
+                target=targets[idx].cpu().numpy(),
+                probs_seq=probs_seq,
+                title_prefix=f"sample_{idx}",
+                frame_duration=0.5,
             )
 
     else:

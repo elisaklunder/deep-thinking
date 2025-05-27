@@ -116,11 +116,8 @@ class DTNet(nn.Module):
             prev_output = out.detach()  # detach to avoid unrolling the full graph through all outputs, 
                                         # not sure!!!
 
-        if self.training:
-            # it was return out, interim_thought
-            return out, interim_thought, all_outputs
-        else:
-            return all_outputs
+
+        return out, interim_thought, all_outputs
 
 
 def dt_net_2d(width, **kwargs):

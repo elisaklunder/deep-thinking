@@ -2,7 +2,7 @@ import json
 
 import matplotlib.pyplot as plt
 
-run_path = "/home/elisa/deep-thinking/outputs/small_mazes/testing-unplucked-Quantia"
+run_path = "/home/elisa/deep-thinking/outputs/small_mazes_outputspace_step/testing-dockside-Otavia"
 with open(f"{run_path}/stats.json", "r") as f:
     file = json.load(f)
     test_acc = file["test_acc"]
