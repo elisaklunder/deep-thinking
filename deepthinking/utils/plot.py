@@ -8,49 +8,48 @@ import numpy as np
 import numpy.ma as ma
 import seaborn as sns
 import torch
-from matplotlib.animation import FFMpegWriter
 from matplotlib.colors import LinearSegmentedColormap
 
 MAZE_INDEX = 8
 
 
-def get_color_block(r: int, g: int, b: int) -> str:
-    if r == 1 and g == 0 and b == 0:
-        return "🟥"  # Red
-    if r == 0 and g == 1 and b == 0:
-        return "🟩"  # Green
-    if r == 1 and g == 1 and b == 1:
-        return "⬜"  # White
-    return "⬛"
+# def get_color_block(r: int, g: int, b: int) -> str:
+#     if r == 1 and g == 0 and b == 0:
+#         return "🟥"  # Red
+#     if r == 0 and g == 1 and b == 0:
+#         return "🟩"  # Green
+#     if r == 1 and g == 1 and b == 1:
+#         return "⬜"  # White
+#     return "⬛"
 
 
-def display_path_mask_as_overlay(input_maze, path_mask):
-    for i in range(input_maze.shape[1]):
-        for j in range(input_maze.shape[2]):
-            r, g, b = input_maze[0, i, j], input_maze[1, i, j], input_maze[2, i, j]
-            if path_mask[i, j] == 1:
-                print("🟦", end="")
-            else:
-                print(get_color_block(r, g, b), end="")
-        print()
+# def display_path_mask_as_overlay(input_maze, path_mask):
+#     for i in range(input_maze.shape[1]):
+#         for j in range(input_maze.shape[2]):
+#             r, g, b = input_maze[0, i, j], input_maze[1, i, j], input_maze[2, i, j]
+#             if path_mask[i, j] == 1:
+#                 print("🟦", end="")
+#             else:
+#                 print(get_color_block(r, g, b), end="")
+#         print()
 
 
-def display_colored_maze(maze: np.ndarray) -> None:
-    # Soultions
-    if len(maze.shape) == 2:
-        for i in range(maze.shape[0]):
-            for j in range(maze.shape[1]):
-                color_code = "⬜" if maze[i, j] == 1 else "⬛"
-                print(color_code, end="")
-            print()
-    # Inputs
-    else:
-        for i in range(maze.shape[1]):
-            for j in range(maze.shape[2]):
-                r, g, b = maze[0, i, j], maze[1, i, j], maze[2, i, j]
-                color_code = get_color_block(r, g, b)
-                print(color_code, end="")
-            print()
+# def display_colored_maze(maze: np.ndarray) -> None:
+#     # Soultions
+#     if len(maze.shape) == 2:
+#         for i in range(maze.shape[0]):
+#             for j in range(maze.shape[1]):
+#                 color_code = "⬜" if maze[i, j] == 1 else "⬛"
+#                 print(color_code, end="")
+#             print()
+#     # Inputs
+#     else:
+#         for i in range(maze.shape[1]):
+#             for j in range(maze.shape[2]):
+#                 r, g, b = maze[0, i, j], maze[1, i, j], maze[2, i, j]
+#                 color_code = get_color_block(r, g, b)
+#                 print(color_code, end="")
+#             print()
 
 
 def plot_heatmap_sequence(
@@ -176,6 +175,7 @@ def plot_maze_and_intermediate_masks(
     ax0.axis("off")
 
     for idx, mask in enumerate(masks, start=1):
+        print("mask nr", idx)
         ax = axs[idx]
         sns.heatmap(
             mask, ax=ax, cbar=False, xticklabels=False, yticklabels=False, linewidths=0
@@ -190,6 +190,82 @@ def plot_maze_and_intermediate_masks(
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         save_str = f"figures/masks_example_{type}-{ts}.png"
     fig.savefig(save_str, bbox_inches="tight")
+    plt.close(fig)
+    
+def plot_maze_and_intermediate_masks(
+    inp, masks, masks_per_row=10, type="sometype", save_str=None
+):
+    n_masks = len(masks)
+    n_rows = (n_masks + masks_per_row - 1) // masks_per_row  # ceil div
+
+    fig, axs = plt.subplots(
+        n_rows + 1, masks_per_row, figsize=(2.0 * masks_per_row, 2.0 * (n_rows + 1))
+    )
+    axs = axs.ravel()
+
+    # Plot original maze
+    ax0 = axs[0]
+    if isinstance(inp, np.ndarray):
+        img = np.transpose(inp.squeeze(), (1, 2, 0))
+    else:
+        img = inp.cpu().squeeze().permute(1, 2, 0)
+    ax0.imshow(img)
+    ax0.axis("off")
+
+    # Plot masks efficiently with imshow
+    for idx, mask in enumerate(masks, start=1):
+        if idx % 100 == 0:  # Less frequent progress updates
+            print(f"Processing mask {idx}/{n_masks}")
+        
+        ax = axs[idx]
+        # Use imshow instead of sns.heatmap - MUCH faster!
+        ax.imshow(mask, cmap='gray', vmin=0, vmax=1)
+        ax.axis("off")
+
+    # Hide unused subplots
+    for ax in axs[len(masks) + 1:]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    if save_str is None:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_str = f"figures/masks_example_{type}-{ts}.png"
+    
+    print(f"Saving to {save_str}")
+    fig.savefig(save_str, bbox_inches="tight", dpi=100)
+    plt.close(fig)
+
+def plot_maze_and_intermediate_masks_ultra_fast(
+    inp, masks, masks_per_row=10, type="sometype", save_str=None
+):
+    n_masks = len(masks)
+    n_rows = (n_masks + masks_per_row - 1) // masks_per_row
+    
+    fig = plt.figure(figsize=(2.0 * masks_per_row, 2.0 * (n_rows + 1)))
+    
+    ax0 = fig.add_subplot(n_rows + 1, masks_per_row, 1)
+    if isinstance(inp, np.ndarray):
+        img = np.transpose(inp.squeeze(), (1, 2, 0))
+    else:
+        img = inp.cpu().squeeze().permute(1, 2, 0)
+    ax0.imshow(img)
+    ax0.axis('off')
+    
+    for idx, mask in enumerate(masks):
+        if idx % 200 == 0:
+            print(f"Processing mask {idx+1}/{n_masks}")
+        
+        ax = fig.add_subplot(n_rows + 1, masks_per_row, idx + 2)
+        ax.imshow(mask, cmap='gray', vmin=0, vmax=1, aspect='equal')
+        ax.axis('off')
+    
+    plt.tight_layout()
+    if save_str is None:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_str = f"figures/masks_example_{type}-{ts}.png"
+    
+    print(f"Saving to {save_str}")
+    fig.savefig(save_str, bbox_inches='tight', dpi=100)
     plt.close(fig)
 
 
@@ -244,9 +320,15 @@ def animate_prediction_sequence(
         fig, update, frames=frames, interval=interval, blit=True
     )
 
-    writer = FFMpegWriter(fps=1 / frame_duration)
-    anim.save(f"figures/prediction_animation_{title_prefix}.mp4", writer=writer)
-    plt.close()
+    try:
+        writer = animation.writers["pillow"](fps=1 / frame_duration)
+        output_file = f"figures/prediction_animation_{title_prefix}.gif"
+        anim.save(output_file, writer=writer)
+    except Exception as e:
+        print(f"Failed to create animation with error: {e}")
+        plt.close(fig)
+        
+    plt.close(fig)
 
 
 if __name__ == "__main__":

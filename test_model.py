@@ -135,13 +135,16 @@ def main(cfg: DictConfig):
                 steps=range(1, probs_seq.shape[0], 1),
                 title_prefix=f"sample_{idx}",
             )
-            animate_prediction_sequence(
-                input_maze=inputs[idx].cpu().numpy(),
-                target=targets[idx].cpu().numpy(),
-                probs_seq=probs_seq,
-                title_prefix=f"sample_{idx}",
-                frame_duration=0.5,
-            )
+            try:
+                animate_prediction_sequence(
+                    input_maze=inputs[idx].cpu().numpy(),
+                    target=targets[idx].cpu().numpy(),
+                    probs_seq=probs_seq,
+                    title_prefix=f"sample_{idx}",
+                    frame_duration=0.5,
+                )
+            except Exception as e:
+                log.error(f"Error animating prediction sequence: {e}")
 
     else:
         test_acc, val_acc, train_acc = dt.test(

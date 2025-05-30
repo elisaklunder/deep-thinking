@@ -152,7 +152,6 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
 
         outputs_max_iters, _, all_outputs = net(inputs, iters_to_do=T_max)
 
-        # === Final iteration loss ===
         if alpha != 1:
             outputs_max_iters = outputs_max_iters.view(
                 outputs_max_iters.size(0), outputs_max_iters.size(1), -1
