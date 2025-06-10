@@ -186,6 +186,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
 
             interm_loss = (loss_map * mask_valid).sum() / mask_valid.sum()
+            interm_loss = interm_loss / T_max 
 
         else:
             interm_loss = torch.tensor(0.0, device=inputs.device)
