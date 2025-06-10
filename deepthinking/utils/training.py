@@ -36,6 +36,7 @@ class TrainingSetup:
     warmup: "typing.Any"
     clip: "typing.Any"
     alpha: "typing.Any"
+    beta: "typing.Any"
     max_iters: "typing.Any"
     problem: "typing.Any"
     mazesolver_mode: "typing.Any"
@@ -128,6 +129,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
     lr_scheduler = train_setup.scheduler
     warmup_scheduler = train_setup.warmup
     alpha = train_setup.alpha
+    beta = train_setup.beta
     max_iters = train_setup.max_iters  # upper budget
     k = 0
     problem = train_setup.problem
@@ -139,64 +141,68 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
     train_loss = 0
     correct = 0
     total = 0
-    T_max = 0
 
     for batch_idx, (inputs, targets) in enumerate(tqdm(trainloader, leave=False)):
+        
         inputs, targets = inputs.to(device), targets.to(device).long()
         targets = targets.view(targets.size(0), -1)
-
+        paths, path_lens, T_max = build_oracle_batch(inputs, solver, train_setup.step)
+        
         optimizer.zero_grad()
 
-        if problem == "mazes":
-            mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
-
-        if alpha != 0:
-            paths, path_lens, T_max = build_oracle_batch(
-                inputs, solver, train_setup.step
-            )
+        mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
 
         outputs_max_iters, _, all_outputs = net(inputs, iters_to_do=T_max)
 
-        if alpha != 1:
-            outputs_max_iters = outputs_max_iters.view(
-                outputs_max_iters.size(0), outputs_max_iters.size(1), -1
-            )
-            loss_max_iters = criterion(outputs_max_iters, targets)
-        else:
-            loss_max_iters = torch.zeros_like(targets).float()
-
         # === Intermediate supervision loss ===
-        if alpha != 0:
-            B, _, C, H, W = all_outputs.shape
-            oracle = torch.zeros((B, T_max, H, W), device=device, dtype=torch.long)
 
-            for b, steps in enumerate(paths):
-                for t, mask_np in enumerate(steps[:T_max]):
-                    oracle[b, t] = torch.from_numpy(mask_np)
+        B, _, C, H, W = all_outputs.shape
+        oracle = torch.zeros((B, T_max, H, W), device=device, dtype=torch.long)
 
-            pred_flat = all_outputs.view(B * T_max, C, H, W)  # (B*T, 2, H, W)
-            targ_flat = oracle.view(B * T_max, H, W)  # (B*T, H, W)
+        for b, steps in enumerate(paths):
+            for t, mask_np in enumerate(steps[:T_max]):
+                oracle[b, t] = torch.from_numpy(mask_np)
 
-            loss_map = criterion(pred_flat, targ_flat)  # (B*T, H, W)
-            loss_map = loss_map.view(B, T_max, H, W)  # (B, T, H, W)
+        pred_flat = all_outputs.view(B * T_max, C, H, W)  # (B*T, 2, H, W)
+        targ_flat = oracle.view(B * T_max, H, W)  # (B*T, H, W)
 
-            mask_valid = loss_mask(
-                all_outputs, path_lens
-            )  # (B, T)  True where t<path_len
-            mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
+        interm_loss_map = criterion(pred_flat, targ_flat)  # (B*T, H, W)
+        interm_loss_map = interm_loss_map.view(B, T_max, H, W)  # (B, T, H, W)
 
-            interm_loss = (loss_map * mask_valid).sum() / mask_valid.sum()
+        # -------------------- new: added final loss at each step ---------------------
+        all_outputs_reshaped = all_outputs.view(
+            B, T_max, C, H * W
+        )  # (B, T, 2, H*W)
+        targets_expanded = targets.unsqueeze(1).expand(-1, T_max, -1)  # (B, T, H*W)
+        final_loss_per_step = criterion(
+            all_outputs_reshaped.view(B * T_max, C, H * W),
+            targets_expanded.view(B * T_max, H * W),
+        )  # (B*T, H*W)
+        final_loss_per_step = final_loss_per_step.view(
+            B, T_max, H * W
+        )  # (B, T, H*W)
 
-        else:
-            interm_loss = torch.tensor(0.0, device=inputs.device)
+        mask_expanded = mask.unsqueeze(1).expand(-1, T_max, -1)  # (B, T, H*W)
+        final_loss_per_step = final_loss_per_step * mask_expanded
+        final_loss_per_step = final_loss_per_step.sum(-1) / mask_expanded.sum(
+            -1
+        )  # (B, T)
 
-        # === Masking for final loss, for both default and intermediate supervision ===
-        if problem == "mazes":
-            loss_max_iters = loss_max_iters * mask
-            loss_max_iters = loss_max_iters[mask > 0]
+        mask_valid = loss_mask(
+            all_outputs, path_lens
+        )  # (B, T) True where t<path_len
+        mask_valid_spatial = mask_valid.unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
 
-        # === Combine losses ===
-        loss = (1 - alpha) * loss_max_iters.mean() + alpha * interm_loss.mean()
+        interm_mask_loss = (
+            interm_loss_map * mask_valid_spatial
+        ).sum() / mask_valid_spatial.sum()
+        interm_final_loss = (
+            final_loss_per_step * mask_valid
+        ).sum() / mask_valid.sum()
+
+        loss = beta * interm_mask_loss + (1 - beta) * interm_final_loss
+        # ------------------------------------------------------------------------------
+    
         loss.backward()
 
         if clip:

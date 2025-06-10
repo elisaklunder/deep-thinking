@@ -178,6 +178,11 @@ def main(cfg: DictConfig):
             ("train_data", cfg.problem.train_data),
             ("train_acc", train_acc),
             ("val_acc", val_acc),
+            ("train_mode", cfg.problem.hyp.train_mode),
+            ("mazesolver_mode", cfg.problem.hyp.mazesolver_mode),
+            ("step", cfg.problem.hyp.step),
+            ("alpha", cfg.problem.hyp.alpha),
+            ("beta", cfg.problem.hyp.beta),
         ]
     )
     with open(os.path.join("stats.json"), "w") as fp:
