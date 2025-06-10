@@ -13,45 +13,6 @@ from matplotlib.colors import LinearSegmentedColormap
 MAZE_INDEX = 8
 
 
-# def get_color_block(r: int, g: int, b: int) -> str:
-#     if r == 1 and g == 0 and b == 0:
-#         return "🟥"  # Red
-#     if r == 0 and g == 1 and b == 0:
-#         return "🟩"  # Green
-#     if r == 1 and g == 1 and b == 1:
-#         return "⬜"  # White
-#     return "⬛"
-
-
-# def display_path_mask_as_overlay(input_maze, path_mask):
-#     for i in range(input_maze.shape[1]):
-#         for j in range(input_maze.shape[2]):
-#             r, g, b = input_maze[0, i, j], input_maze[1, i, j], input_maze[2, i, j]
-#             if path_mask[i, j] == 1:
-#                 print("🟦", end="")
-#             else:
-#                 print(get_color_block(r, g, b), end="")
-#         print()
-
-
-# def display_colored_maze(maze: np.ndarray) -> None:
-#     # Soultions
-#     if len(maze.shape) == 2:
-#         for i in range(maze.shape[0]):
-#             for j in range(maze.shape[1]):
-#                 color_code = "⬜" if maze[i, j] == 1 else "⬛"
-#                 print(color_code, end="")
-#             print()
-#     # Inputs
-#     else:
-#         for i in range(maze.shape[1]):
-#             for j in range(maze.shape[2]):
-#                 r, g, b = maze[0, i, j], maze[1, i, j], maze[2, i, j]
-#                 color_code = get_color_block(r, g, b)
-#                 print(color_code, end="")
-#             print()
-
-
 def plot_heatmap_sequence(
     input_maze,  # (3, H, W) - input maze in RGB
     target,  # (H, W) – target
@@ -155,42 +116,6 @@ def plot_maze_and_target(input, targets, save_str=None):
     plt.close()
 
 
-def plot_maze_and_intermediate_masks(
-    inp, masks, masks_per_row=10, type="sometype", save_str=None
-):
-    n_masks = len(masks)
-    n_rows = (n_masks + masks_per_row - 1) // masks_per_row  # ceil div
-
-    fig, axs = plt.subplots(
-        n_rows + 1, masks_per_row, figsize=(2.0 * masks_per_row, 2.0 * (n_rows + 1))
-    )
-    axs = axs.ravel()
-
-    ax0 = axs[0]
-    if isinstance(inp, np.ndarray):
-        img = np.transpose(inp.squeeze(), (1, 2, 0))
-    else:
-        img = inp.cpu().squeeze().permute(1, 2, 0)
-    ax0.imshow(img)
-    ax0.axis("off")
-
-    for idx, mask in enumerate(masks, start=1):
-        print("mask nr", idx)
-        ax = axs[idx]
-        sns.heatmap(
-            mask, ax=ax, cbar=False, xticklabels=False, yticklabels=False, linewidths=0
-        )
-        ax.axis("off")
-
-    for ax in axs[len(masks) + 1 :]:
-        ax.set_visible(False)
-
-    fig.tight_layout()
-    if save_str is None:
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_str = f"figures/masks_example_{type}-{ts}.png"
-    fig.savefig(save_str, bbox_inches="tight")
-    plt.close(fig)
     
 def plot_maze_and_intermediate_masks(
     inp, masks, masks_per_row=10, type="sometype", save_str=None

@@ -125,5 +125,5 @@ def visualize_stats(json_path, loader="test"):
 
 
 if __name__ == "__main__":
-    stats_path = "/home/elisa/deep-thinking/outputs/small_mazes_outputspace_step/testing-clasping-Caren/stats.json"
+    stats_path = "/home/elisa/deep-thinking/outputs/small_mazes_outputspace_step/testing-unweened-Eugenio/stats.json"
     visualize_stats(stats_path)

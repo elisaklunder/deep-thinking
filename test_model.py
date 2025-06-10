@@ -25,8 +25,9 @@ from deepthinking.utils.plot import animate_prediction_sequence, plot_heatmap_se
 # Ignore statements for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),
 #     Not callable (E1102), Invalid name (C0103), No exception (W0702),
-#     Too many local variables (R0914), Missing docstring (C0116, C0115).
-# pylint: disable=R0912, R0915, E1101, E1102, C0103, W0702, R0914, C0116, C0115
+#     Too many local variables (R0914), Missing docstring (C0116, C0115),
+#     No cfg in main call (E1120), No specified encoding (W1514), Use lazy % formatting in logging functions (W1203)
+# pylint: disable=R0912, R0915, E1101, E1102, C0103, W0702, R0914, C0116, C0115, E1120, W1514, W1203
 
 
 @hydra.main(config_path="config", config_name="test_model_config")
@@ -143,7 +144,7 @@ def main(cfg: DictConfig):
                     title_prefix=f"sample_{idx}",
                     frame_duration=0.5,
                 )
-            except Exception as e:
+            except (ValueError, RuntimeError, ImportError, IOError) as e:
                 log.error(f"Error animating prediction sequence: {e}")
 
     else:
@@ -187,7 +188,6 @@ def main(cfg: DictConfig):
     with open(os.path.join("stats.json"), "w") as fp:
         json.dump(stats, fp)
     log.info(stats)
-    ####################################################
 
 
 if __name__ == "__main__":

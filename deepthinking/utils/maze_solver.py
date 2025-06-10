@@ -13,6 +13,7 @@ from deepthinking.utils.plot import plot_maze_and_intermediate_masks_ultra_fast
 Patch = Tuple[int, int]  # (row, col) on the patch grid
 RGB = np.ndarray  # shape (3, H, W)
 
+
 class MazeSolver:
     """
     Maze solver using different algorithms to find the optimal path in a maze.
@@ -648,7 +649,7 @@ class MazeSolver:
             return self.get_astar_masks(input_rgb, step=step)
         elif self.mode == "dfs":
             return self.get_dfs_masks(input_rgb, step=step)
-        
+
 
 def colormap_for_astar():
     colors = [
@@ -661,6 +662,7 @@ def colormap_for_astar():
     ]
     return colors
 
+
 def colormap_for_dfs():
     colors = [
         [0, 0, 0],  # 0: Black
@@ -669,6 +671,7 @@ def colormap_for_dfs():
         [0, 1, 0],  # 3: Green
     ]
     return colors
+
 
 def plot_colored_masks(masks, colormap, save_path=None):
     num_masks = len(masks)
@@ -709,6 +712,7 @@ def plot_colored_masks(masks, colormap, save_path=None):
 
     return fig
 
+
 def plot_solution_length_distribution(
     dataset_path: str,
 ):
@@ -725,9 +729,9 @@ def plot_solution_length_distribution(
 
     inter_lengths, reverse_lengths, bfs_lengths = [], [], []
     for maze in tqdm(mazes):
-        inter_lengths.append(len(solver.get_incremental_path_masks(maze)))
-        reverse_lengths.append(len(solver.get_reverse_exploration_masks(maze)))
-        bfs_lengths.append(len(solver.get_bfs_masks(maze)))
+        inter_lengths.append(len(solver.get_incremental_path_masks(maze, step=1)))
+        reverse_lengths.append(len(solver.get_reverse_exploration_masks(maze, step=1)))
+        bfs_lengths.append(len(solver.get_bfs_masks(maze, step=1)))
 
     stats = pd.DataFrame(
         {"incremental": inter_lengths, "reverse": reverse_lengths, "bfs": bfs_lengths}
@@ -794,5 +798,5 @@ if __name__ == "__main__":
     # colors = colormap_for_astar()
     # fig = plot_colored_masks(masks, colors, save_path="figures/dfs_colored_masks.png")
 
-    masks_dfs = maze_solver.get_dfs_masks_binary(maze, step=1)
-    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="dfs_binary")
+    masks_dfs = maze_solver.get_incremental_path_masks_bidirectional(maze, step=3)
+    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="bidirectional")

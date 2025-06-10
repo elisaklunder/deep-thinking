@@ -1,13 +1,14 @@
-""" tools.py
-    Utility functions that are common to all tasks
+"""tools.py
+Utility functions that are common to all tasks
 
-    Collaboratively developed
-    by Avi Schwarzschild, Eitan Borgnia,
-    Arpit Bansal, and Zeyad Emam.
+Collaboratively developed
+by Avi Schwarzschild, Eitan Borgnia,
+Arpit Bansal, and Zeyad Emam.
 
-    Developed for DeepThinking project
-    October 2021
+Developed for DeepThinking project
+October 2021
 """
+
 import logging
 import random
 from datetime import datetime
@@ -15,16 +16,16 @@ from datetime import datetime
 import torch
 from icecream import ic
 from torch.optim import SGD, Adam, AdamW
-from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
 import deepthinking.models as models
-from .mazes_data import prepare_maze_loader
-from .prefix_sums_data import prepare_prefix_loader
-from .chess_data import prepare_chess_loader
-from deepthinking.adjectives import adjectives  
-from deepthinking.names       import names     
+from deepthinking.adjectives import adjectives
+from deepthinking.names import names
 
-from .warmup import ExponentialWarmup, LinearWarmup
+from .chess_data import prepare_chess_loader
+from .mazes_data import get_mazes
+from .prefix_sums_data import prepare_prefix_loader
+from .warmup import ExponentialWarmup
 
 # Ignore statements for pylint:
 #     Too many branches (R0912), Too many statements (R0915), No member (E1101),
@@ -40,27 +41,45 @@ def generate_run_id():
 
 def get_dataloaders(problem_args):
     if problem_args.name == "prefix_sums":
-        return prepare_prefix_loader(train_batch_size=problem_args.hyp.train_batch_size,
-                                     test_batch_size=problem_args.hyp.test_batch_size,
-                                     train_data=problem_args.train_data,
-                                     test_data=problem_args.test_data)
+        return prepare_prefix_loader(
+            train_batch_size=problem_args.hyp.train_batch_size,
+            test_batch_size=problem_args.hyp.test_batch_size,
+            train_data=problem_args.train_data,
+            test_data=problem_args.test_data,
+        )
     elif problem_args.name == "mazes":
-        return prepare_maze_loader(train_batch_size=problem_args.hyp.train_batch_size,
-                                   test_batch_size=problem_args.hyp.test_batch_size,
-                                   train_data=problem_args.train_data,
-                                   test_data=problem_args.test_data)
+        # return prepare_maze_loader(
+        #     train_batch_size=problem_args.hyp.train_batch_size,
+        #     test_batch_size=problem_args.hyp.test_batch_size,
+        #     train_data=problem_args.train_data,
+        #     test_data=problem_args.test_data,
+        # )
+        return get_mazes(
+            dataset="maze-dataset",
+            maze_size_train=problem_args.train_data,
+            maze_size_test=problem_args.test_data,
+            train_batch_size=problem_args.hyp.train_batch_size,
+            test_batch_size=problem_args.hyp.test_batch_size,
+            percolation=0,
+            deadend_start=True,
+        )
+
     elif problem_args.name == "chess":
-        return prepare_chess_loader(train_batch_size=problem_args.hyp.train_batch_size,
-                                    test_batch_size=problem_args.hyp.test_batch_size,
-                                    train_data=problem_args.train_data,
-                                    test_data=problem_args.test_data)
+        return prepare_chess_loader(
+            train_batch_size=problem_args.hyp.train_batch_size,
+            test_batch_size=problem_args.hyp.test_batch_size,
+            train_data=problem_args.train_data,
+            test_data=problem_args.test_data,
+        )
     else:
         raise ValueError(f"Invalid problem spec. {problem_args.name}")
 
 
 def get_model(model, width, max_iters, in_channels=3):
     model = model.lower()
-    net = getattr(models, model)(width=width, in_channels=in_channels, max_iters=max_iters)
+    net = getattr(models, model)(
+        width=width, in_channels=in_channels, max_iters=max_iters
+    )
     return net
 
 
@@ -79,7 +98,10 @@ def get_optimizer(optim_args, model_args, net, state_dict):
         base_params = [p for n, p in net.named_parameters() if "recur" not in n]
         recur_params = [p for n, p in net.named_parameters() if "recur" in n]
         iters = model_args.max_iters
-        all_params = [{"params": base_params}, {"params": recur_params, "lr": lr / iters}]
+        all_params = [
+            {"params": base_params},
+            {"params": recur_params, "lr": lr / iters},
+        ]
     else:
         base_params = [p for n, p in net.named_parameters()]
         recur_params = []
@@ -93,7 +115,9 @@ def get_optimizer(optim_args, model_args, net, state_dict):
     elif optimizer_name == "adamw":
         optimizer = AdamW(all_params, lr=lr, weight_decay=2e-4)
     else:
-        raise ValueError(f"{ic.format()}: Optimizer choise of {optimizer_name} not yet implmented.")
+        raise ValueError(
+            f"{ic.format()}: Optimizer choise of {optimizer_name} not yet implmented."
+        )
 
     if state_dict is not None:
         optimizer.load_state_dict(state_dict)
@@ -104,12 +128,15 @@ def get_optimizer(optim_args, model_args, net, state_dict):
         # warmup_scheduler = LinearWarmup(optimizer, warmup_period=warmup_period)
 
     if lr_decay.lower() == "step":
-        lr_scheduler = MultiStepLR(optimizer, milestones=lr_schedule,
-                                   gamma=lr_factor, last_epoch=-1)
+        lr_scheduler = MultiStepLR(
+            optimizer, milestones=lr_schedule, gamma=lr_factor, last_epoch=-1
+        )
     elif lr_decay.lower() == "cosine":
-        lr_scheduler = CosineAnnealingLR(optimizer, epochs, eta_min=0, last_epoch=-1, verbose=False)
+        lr_scheduler = CosineAnnealingLR(optimizer, epochs, eta_min=0, last_epoch=-1)
     else:
-        raise ValueError(f"{ic.format()}: Learning rate decay style {lr_decay} not yet implemented.")
+        raise ValueError(
+            f"{ic.format()}: Learning rate decay style {lr_decay} not yet implemented."
+        )
 
     return optimizer, warmup_scheduler, lr_scheduler
 

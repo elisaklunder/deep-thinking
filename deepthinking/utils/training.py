@@ -56,7 +56,9 @@ def build_oracle_batch(inputs_batch, solver: MazeSolver, step: int):
     lengths = []
     max_len = 0
     for b in range(inputs_batch.size(0)):
-        path_b = solver.get_intermediate_supervision_masks(inputs_batch[b].cpu().numpy(), step)
+        path_b = solver.get_intermediate_supervision_masks(
+            inputs_batch[b].cpu().numpy(), step
+        )
         paths.append(path_b)
         lengths.append(len(path_b))
         max_len = max(max_len, len(path_b))
@@ -137,6 +139,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
     train_loss = 0
     correct = 0
     total = 0
+    T_max = 0
 
     for batch_idx, (inputs, targets) in enumerate(tqdm(trainloader, leave=False)):
         inputs, targets = inputs.to(device), targets.to(device).long()
@@ -148,7 +151,9 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
 
         if alpha != 0:
-            paths, path_lens, T_max = build_oracle_batch(inputs, solver, train_setup.step)
+            paths, path_lens, T_max = build_oracle_batch(
+                inputs, solver, train_setup.step
+            )
 
         outputs_max_iters, _, all_outputs = net(inputs, iters_to_do=T_max)
 
@@ -168,15 +173,17 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             for b, steps in enumerate(paths):
                 for t, mask_np in enumerate(steps[:T_max]):
                     oracle[b, t] = torch.from_numpy(mask_np)
-                    
-            pred_flat = all_outputs.view(B * T_max, C, H, W)   # (B*T, 2, H, W)
-            targ_flat = oracle.view(   B * T_max,     H, W)     # (B*T, H, W)
 
-            loss_map  = criterion(pred_flat, targ_flat)         # (B*T, H, W)
-            loss_map   = loss_map.view(B, T_max, H, W)          # (B, T, H, W)
+            pred_flat = all_outputs.view(B * T_max, C, H, W)  # (B*T, 2, H, W)
+            targ_flat = oracle.view(B * T_max, H, W)  # (B*T, H, W)
 
-            mask_valid = loss_mask(all_outputs, path_lens)      # (B, T)  True where t<path_len
-            mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1) # (B, T, 1, 1)
+            loss_map = criterion(pred_flat, targ_flat)  # (B*T, H, W)
+            loss_map = loss_map.view(B, T_max, H, W)  # (B, T, H, W)
+
+            mask_valid = loss_mask(
+                all_outputs, path_lens
+            )  # (B, T)  True where t<path_len
+            mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
 
             interm_loss = (loss_map * mask_valid).sum() / mask_valid.sum()
 

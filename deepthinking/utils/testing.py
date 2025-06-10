@@ -160,6 +160,7 @@ def test_max_conf(net, testloader, iters, problem, device):
         ret_acc[ite] = accuracy[ite - 1].item()
     return ret_acc
 
+
 def _one_iter(net, x, interim, prev):
     """
     Run exactly one recurrent iteration by exploiting the
@@ -169,6 +170,7 @@ def _one_iter(net, x, interim, prev):
         x, iters_to_do=1, interim_thought=interim, prev_output=prev
     )
     return logits.squeeze(1), interim, logits.detach()
+
 
 def test_stable(
     net,
@@ -191,7 +193,6 @@ def test_stable(
     total = 0
     correct = 0
     max_iters = max(iters)
-    min_iters = min(iters)
     samples_collected = 0
     collected_outputs = []
 
@@ -241,8 +242,8 @@ def test_stable(
                     # add current mask to history
                     last_masks[b].append(masks[b].cpu())
 
-                    # stability criterion: > min_iters, 5 identical masks, all with high confidence
-                    if t >= min_iters and len(last_masks[b]) == 5:
+                    # stability criterion:  5 identical masks, all with high confidence
+                    if len(last_masks[b]) == 5:
                         same = all(
                             (last_masks[b][k] == last_masks[b][0]).all()
                             for k in range(1, 5)
@@ -303,7 +304,7 @@ def test_stable(
         "acc_by_iter": acc_by_iter,
         "stable_acc": round(100.0 * correct / total, 2),
     }
-    
+
     # pad collected outputs to the same length using all zeros
     if return_outputs and collected_outputs:
         max_T = max(len(seq) for seq in collected_outputs)
@@ -311,13 +312,16 @@ def test_stable(
         for seq in collected_outputs:
             if len(seq) < max_T:
                 padding_shape = seq[-1].shape
-                padding = [torch.zeros(padding_shape, device='cpu') for _ in range(max_T - len(seq))]
+                padding = [
+                    torch.zeros(padding_shape, device="cpu")
+                    for _ in range(max_T - len(seq))
+                ]
                 padded_seq = seq + padding
             else:
                 padded_seq = seq
             padded_outputs.append(torch.cat(padded_seq, dim=0))
         collected = torch.stack(padded_outputs)
-        
+
         return ret_acc, collected
     else:
         return ret_acc, None
