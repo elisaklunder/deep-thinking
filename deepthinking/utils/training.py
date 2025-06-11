@@ -175,9 +175,9 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
         )  # (B, T, 2, H*W)
         targets_expanded = targets.unsqueeze(1).expand(-1, T_max, -1)  # (B, T, H*W)
         final_loss_per_step = criterion(
-            all_outputs_reshaped.view(B * T_max, C, H * W),
-            targets_expanded.view(B * T_max, H * W),
-        )  # (B*T, H*W)
+            all_outputs_reshaped.reshape(B * T_max, C, H*W),
+            targets_expanded.reshape(B * T_max, H*W)
+        )
         final_loss_per_step = final_loss_per_step.view(
             B, T_max, H * W
         )  # (B, T, H*W)
