@@ -11,7 +11,7 @@ def test_easy_to_hard_data():
         print("Successfully imported easy-to-hard-data")
 
         # Create a small test dataset
-        dataset = EasyToHardMazeDataset("./data", train=True, size=9, download=True)
+        dataset = EasyToHardMazeDataset("./data", train=False, size=59, download=True)
         print(f"Dataset loaded with {len(dataset)} mazes")
 
         # Check a sample
@@ -43,7 +43,7 @@ def test_maze_dataset():
         )  # set this threshold to prevent crashing on large datasets. Will be fixed soon.
         print("Successfully imported maze-dataset")
 
-        grid_n = 9
+        grid_n = 33
         base_dataset = MazeDataset.from_config(
             MazeDatasetConfig(
                 name="test",
