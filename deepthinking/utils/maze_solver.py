@@ -476,7 +476,7 @@ class MazeSolver:
 
             final_frame = self._mask_from_patches(solution_path, (H, W), offs)
 
-            for _ in range(10):
+            for _ in range(len(frames) // 10):
                 frames.append(final_frame)
 
         return frames
