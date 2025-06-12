@@ -1,14 +1,15 @@
 import heapq
 import os
+import sys
 from collections import deque
 from typing import Dict, List, Optional, Sequence, Set, Tuple
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-from deepthinking.utils.plot import plot_maze_and_intermediate_masks_ultra_fast
 
 Patch = Tuple[int, int]  # (row, col) on the patch grid
 RGB = np.ndarray  # shape (3, H, W)
@@ -786,7 +787,8 @@ def plot_solution_length_distribution(
 
 
 if __name__ == "__main__":
-    path = "data/maze_data_test_11/inputs.npy"
+    from deepthinking.utils.plot import plot_maze_and_intermediate_masks_ultra_fast
+    path = "data/maze_data_test_33/inputs.npy"
     inputs = np.load(path)
 
     MAZE_INDEX = 2
@@ -798,5 +800,5 @@ if __name__ == "__main__":
     # colors = colormap_for_astar()
     # fig = plot_colored_masks(masks, colors, save_path="figures/dfs_colored_masks.png")
 
-    masks_dfs = maze_solver.get_incremental_path_masks_bidirectional(maze, step=3)
-    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="bidirectional")
+    masks_dfs = maze_solver.get_dfs_masks(maze, step=3)
+    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="dfs_longend")
