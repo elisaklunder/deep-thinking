@@ -13,6 +13,7 @@ import typing
 from dataclasses import dataclass
 from random import randrange
 
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -141,14 +142,22 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
     total = 0
     T_max = 0
 
+    debug_stats = {
+        "final_losses": [],
+        "intermediate_losses": [],
+        "intermediate_losses_global": [],
+        "path_lengths": [],
+        "alpha_values": [],
+        "loss_ratios": [],
+    }
+
     for batch_idx, (inputs, targets) in enumerate(tqdm(trainloader, leave=False)):
         inputs, targets = inputs.to(device), targets.to(device).long()
         targets = targets.view(targets.size(0), -1)
 
         optimizer.zero_grad()
 
-        if problem == "mazes":
-            mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
+        mask = inputs.view(inputs.size(0), inputs.size(1), -1).max(dim=1)[0] > 0
 
         if alpha != 0:
             paths, path_lens, T_max = build_oracle_batch(
@@ -162,6 +171,8 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
                 outputs_max_iters.size(0), outputs_max_iters.size(1), -1
             )
             loss_max_iters = criterion(outputs_max_iters, targets)
+            loss_max_iters = loss_max_iters * mask
+            loss_max_iters = loss_max_iters[mask > 0]
         else:
             loss_max_iters = torch.zeros_like(targets).float()
 
@@ -185,20 +196,57 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
             )  # (B, T)  True where t<path_len
             mask_valid = mask_valid.unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
 
-            interm_loss = (loss_map * mask_valid).sum() / mask_valid.sum()
-            interm_loss = interm_loss / T_max 
+            # Improved normalization: consider normalizing per sample then averaging
+            valid_losses = loss_map * mask_valid
+
+            # Option 1: global normalization
+            interm_loss_global = valid_losses.sum() / mask_valid.sum()
+
+            # Option 2: per-sample normalization
+            sample_losses = valid_losses.sum(dim=[1, 2, 3])  # Sum over T,H,W
+            sample_counts = mask_valid.sum(dim=[1, 2, 3])  # Count valid positions
+            sample_avg_losses = sample_losses / (sample_counts + 1e-8)  # Avoid div by 0
+            interm_loss_balanced = sample_avg_losses.mean()
+
+            # Use balanced version
+            interm_loss = interm_loss_balanced
 
         else:
             interm_loss = torch.tensor(0.0, device=inputs.device)
 
-        # === Masking for final loss, for both default and intermediate supervision ===
-        if problem == "mazes":
-            loss_max_iters = loss_max_iters * mask
-            loss_max_iters = loss_max_iters[mask > 0]
+        # === Adaptive alpha based on path length variance ===
+        if alpha != 0 and alpha != 1:
+            avg_path_len = torch.tensor(path_lens).float().mean()
+            path_len_std = torch.tensor(path_lens).float().std()
+
+            if path_len_std > avg_path_len * 0.5:  # High variance
+                adaptive_alpha = alpha * 0.8  # Reduce intermediate supervision
+            else:
+                adaptive_alpha = alpha
+        else:
+            adaptive_alpha = alpha
 
         # === Combine losses ===
         loss = (1 - alpha) * loss_max_iters.mean() + alpha * interm_loss.mean()
         loss.backward()
+
+        # === Debugging: Log loss components ===
+        if batch_idx % 100 == 0:  # Log every 10 batches
+            debug_stats["final_losses"].append(loss.item())
+            debug_stats["intermediate_losses"].append(interm_loss.item())
+            debug_stats["intermediate_losses_global"].append(interm_loss_global.item())
+            debug_stats["path_lengths"].extend(path_lens if alpha != 0 else [0])
+            debug_stats["alpha_values"].append(adaptive_alpha)
+            debug_stats["loss_ratios"].append(interm_loss.item() / (loss.item() + 1e-8))
+
+            print(
+                f"Batch {batch_idx}: Final Loss: {loss.item():.4f}, "
+                f"Per-sample-avg Intermediate Loss: {interm_loss.item():.4f}, "
+                f"Global Intermediate Loss: {interm_loss_global.item():.4f}, "
+                f"Alpha: {alpha:.3f}, "
+                f"Adaptive Alpha: {adaptive_alpha:.3f}, "
+                f"Avg Path Len: {np.mean(path_lens) if alpha != 0 else 0:.1f}"
+            )
 
         if clip:
             torch.nn.utils.clip_grad_norm_(net.parameters(), clip)

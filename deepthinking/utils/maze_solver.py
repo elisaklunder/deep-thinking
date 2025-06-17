@@ -1,5 +1,13 @@
-import heapq
 import os
+import sys
+
+project_root = os.path.abspath(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import heapq
 from collections import deque
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -211,181 +219,6 @@ class MazeSolver:
 
         return [], discovered
 
-    def _astar_trace_enhanced(
-        self, free: np.ndarray, start: Patch, goal: Patch
-    ) -> Tuple[List[Patch], List[Dict[str, List[Patch]]]]:
-        """
-        Returns:
-        - optimal_path: The shortest path found
-        - algorithm_states: List of dictionaries containing state at each step
-        """
-        h2, w2 = free.shape
-        algorithm_states = []
-
-        open_set = [
-            (
-                self._manhattan_distance(start, goal),
-                self._manhattan_distance(start, goal),
-                start,
-            )
-        ]
-        heapq.heapify(open_set)
-        closed_set: Set[Patch] = set()
-        open_set_elements = {start}
-        g_score: Dict[Patch, int] = {start: 0}
-        parent: Dict[Patch, Patch] = {}
-
-        step = 0
-
-        while open_set:
-            current_state = {
-                "open_set": list(open_set_elements),
-                "closed_set": list(closed_set),
-                "current_node": None,
-                "neighbors_explored": [],
-                "step": step,
-            }
-
-            _, _, current_node = heapq.heappop(open_set)
-            open_set_elements.remove(current_node)
-            current_state["current_node"] = current_node
-
-            if current_node in closed_set:
-                continue
-
-            closed_set.add(current_node)
-
-            if current_node == goal:
-                path = []
-                node = current_node
-                while node in parent:
-                    path.append(node)
-                    node = parent[node]
-                path.append(start)
-                path.reverse()
-                current_state["path_found"] = True
-                algorithm_states.append(current_state)
-                return path, algorithm_states
-
-            neighbors_this_step = []
-            for drow, dcol in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                nr, nc = current_node[0] + drow, current_node[1] + dcol
-                neighbor = (nr, nc)
-
-                if not (0 <= nr < h2 and 0 <= nc < w2 and free[nr, nc]):
-                    continue
-
-                tentative_g = g_score[current_node] + 1
-
-                if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    parent[neighbor] = current_node
-                    g_score[neighbor] = tentative_g
-                    f_score = tentative_g + self._manhattan_distance(neighbor, goal)
-
-                    if neighbor not in open_set_elements:
-                        heapq.heappush(
-                            open_set,
-                            (
-                                f_score,
-                                self._manhattan_distance(neighbor, goal),
-                                neighbor,
-                            ),
-                        )
-                        open_set_elements.add(neighbor)
-                        neighbors_this_step.append(neighbor)
-
-            current_state["neighbors_explored"] = neighbors_this_step
-            algorithm_states.append(current_state)
-            step += 1
-
-        return [], algorithm_states
-
-    def get_dfs_masks_colored(self, input_rgb, step=1) -> List[np.ndarray]:
-        """
-        - 0: Unvisited
-        - 1: DFS-explored patches - Blue
-        - 2: Dead ends - Red
-        - 3: Final path - Green
-        """
-
-        rgb, offs = self._crop_outer_wall(input_rgb)
-        free, start, goal = self._parse_maze(rgb)
-        H, W = input_rgb.shape[1:]
-
-        h2, w2 = free.shape
-        visited = np.zeros_like(free, bool)
-        parent = {}
-        path = []
-        discovered: List[Patch] = []
-        dead_ends: Set[Patch] = set()
-        found = False
-
-        def dfs(patch: Patch):
-            nonlocal found
-            if found:
-                return
-            visited[patch] = True
-            discovered.append(patch)
-
-            if patch == goal:
-                found = True
-                return
-
-            is_dead_end = True
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nr, nc = patch[0] + dr, patch[1] + dc
-                neighbor = (nr, nc)
-                if (
-                    (0 <= nr < h2)
-                    and (0 <= nc < w2)
-                    and free[nr, nc]
-                    and not visited[nr, nc]
-                ):
-                    parent[neighbor] = patch
-                    dfs(neighbor)
-                    if found:
-                        return
-                    is_dead_end = False
-
-            if is_dead_end:
-                dead_ends.add(patch)
-
-        dfs(start)
-
-        if goal not in parent and start != goal:
-            return []
-
-        path = [goal]
-        while path[-1] != start:
-            path.append(parent[path[-1]])
-        path.reverse()
-        path_set = set(path)
-
-        frames = []
-        for i in range(1, len(discovered) + 1, step):
-            patches_values = []
-            for patch in discovered[:i]:
-                if patch in dead_ends:
-                    patches_values.append((patch, 2))
-                else:
-                    patches_values.append((patch, 1))
-            frame = self._mask_from_patches_with_values(patches_values, (H, W), offs)
-            frames.append(frame)
-
-        final_frame = np.zeros((H, W), np.uint8)
-        for patch in discovered:
-            if patch in dead_ends:
-                val = 2
-            elif patch in path_set:
-                val = 3
-            else:
-                val = 1
-            self._toggle_patch(final_frame, patch, offs, val)
-        for _ in range(10):
-            frames.append(final_frame)
-
-        return frames
-
     def get_dfs_masks(self, input_rgb, step=1) -> List[np.ndarray]:
         """
         DFS with backtracking
@@ -574,67 +407,133 @@ class MazeSolver:
 
         return exploration_masks
 
-    def get_astar_masks_colored(self, input_rgb, step=1) -> List[np.ndarray]:
+    def get_wall_following_masks(self, input_rgb, step=1) -> List[np.ndarray]:
         """
-        0: Unexplored (walls/unvisited)
-        1: Open set (candidates for exploration) - Cyan
-        2: Closed set (already explored) - Orange
-        3: Current node (being processed) - Yellow
-        4: Optimal path (final solution) - Magenta
-        5: Dead ends (explored but not optimal) - Purple
+        Right-hand rule wall following with deadend backtracking
         """
         rgb, offs = self._crop_outer_wall(input_rgb)
         free, start, goal = self._parse_maze(rgb)
-        optimal_path, algorithm_states = self._astar_trace_enhanced(free, start, goal)
-
         H, W = input_rgb.shape[1:]
-        masks = []
 
-        for i, state in enumerate(algorithm_states):
-            if i % step != 0:
+        # Directions: North, East, South, West
+        directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+
+        current = start
+        direction = 0  # Start facing North
+        path = [current]
+        frames = []
+        frame_counter = 0
+        max_steps = free.sum() * 4  # Prevent infinite loops
+        visited = set([current])
+
+        while current != goal and len(path) < max_steps:
+            # Check if we're at a deadend (can't go forward, right, or left)
+            is_deadend = True
+
+            # Check all possible directions
+            for i in range(4):
+                test_dir = (direction + i) % 4
+                test_pos = (
+                    current[0] + directions[test_dir][0],
+                    current[1] + directions[test_dir][1],
+                )
+
+                if (
+                    0 <= test_pos[0] < free.shape[0]
+                    and 0 <= test_pos[1] < free.shape[1]
+                    and free[test_pos]
+                    and test_pos not in visited
+                ):
+                    is_deadend = False
+                    break
+
+            if is_deadend and current != start:
+                # Backtrack to the last junction
+                path.pop()  # Remove current position
+                if path:
+                    current = path[-1]
+                    # Need to find direction after backtracking
+                    if len(path) >= 2:
+                        prev = path[-2]
+                        # Determine new direction based on previous movement
+                        dx, dy = current[0] - prev[0], current[1] - prev[1]
+                        for i, (dx_dir, dy_dir) in enumerate(directions):
+                            if (dx, dy) == (dx_dir, dy_dir):
+                                direction = i
+                                break
+
+                frame_counter += 1
+                if frame_counter % step == 0:
+                    frame = self._mask_from_patches(path, (H, W), offs)
+                    frames.append(frame)
                 continue
 
-            patches_values = []
-
-            for patch in state["closed_set"]:
-                patches_values.append((patch, 2))
-
-            for patch in state["open_set"]:
-                patches_values.append((patch, 1))
-
-            if state["current_node"]:
-                patches_values.append((state["current_node"], 3))
-
-            for patch in state["neighbors_explored"]:
-                patches_values.append((patch, 1))
-
-            mask = self._mask_from_patches_with_values(patches_values, (H, W), offs)
-            masks.append(mask)
-
-        if optimal_path:
-            patches_values = []
-            optimal_set = set(optimal_path)
-
-            if algorithm_states:
-                all_explored = set()
-                for state in algorithm_states:
-                    all_explored.update(state["closed_set"])
-
-                for patch in all_explored:
-                    if patch not in optimal_set:
-                        patches_values.append((patch, 5))
-
-            for patch in optimal_path:
-                patches_values.append((patch, 4))
-
-            final_mask = self._mask_from_patches_with_values(
-                patches_values, (H, W), offs
+            # Try to turn right first (wall-following rule)
+            right_dir = (direction + 1) % 4
+            right_pos = (
+                current[0] + directions[right_dir][0],
+                current[1] + directions[right_dir][1],
             )
 
-            for _ in range(10):
-                masks.append(final_mask)
+            if (
+                0 <= right_pos[0] < free.shape[0]
+                and 0 <= right_pos[1] < free.shape[1]
+                and free[right_pos]
+                and right_pos not in visited
+            ):
+                # Can turn right
+                direction = right_dir
+                current = right_pos
+            else:
+                # Try to go straight
+                straight_pos = (
+                    current[0] + directions[direction][0],
+                    current[1] + directions[direction][1],
+                )
 
-        return masks
+                if (
+                    0 <= straight_pos[0] < free.shape[0]
+                    and 0 <= straight_pos[1] < free.shape[1]
+                    and free[straight_pos]
+                    and straight_pos not in visited
+                ):
+                    current = straight_pos
+                else:
+                    # Try to turn left
+                    left_dir = (direction - 1) % 4
+                    left_pos = (
+                        current[0] + directions[left_dir][0],
+                        current[1] + directions[left_dir][1],
+                    )
+
+                    if (
+                        0 <= left_pos[0] < free.shape[0]
+                        and 0 <= left_pos[1] < free.shape[1]
+                        and free[left_pos]
+                        and left_pos not in visited
+                    ):
+                        direction = left_dir
+                        current = left_pos
+                    else:
+                        # Turn around as last resort
+                        direction = (direction + 2) % 4
+                        continue
+
+            visited.add(current)
+            path.append(current)
+
+            frame_counter += 1
+            if frame_counter % step == 0:
+                frame = self._mask_from_patches(path, (H, W), offs)
+                frames.append(frame)
+
+        # Add final frames showing the solution
+        if current == goal:
+            final_frame = self._mask_from_patches(path, (H, W), offs)
+            for _ in range(5):  # Add the final solution a few times for emphasis
+                frames.append(final_frame)
+
+        return frames
 
     def get_intermediate_supervision_masks(self, input_rgb, step=1) -> List[np.ndarray]:
         if self.mode == "incremental":
@@ -649,68 +548,6 @@ class MazeSolver:
             return self.get_astar_masks(input_rgb, step=step)
         elif self.mode == "dfs":
             return self.get_dfs_masks(input_rgb, step=step)
-
-
-def colormap_for_astar():
-    colors = [
-        [0, 0, 0],  # 0: Black - unexplored
-        [0, 1, 1],  # 1: Cyan - open set
-        [1, 0.5, 0],  # 2: Orange - closed set
-        [1, 1, 0],  # 3: Yellow - current node
-        [1, 0, 0],  # 4: Red - optimal path
-        [0.8, 0.8, 0.8],  # 5: Light gray - dead ends
-    ]
-    return colors
-
-
-def colormap_for_dfs():
-    colors = [
-        [0, 0, 0],  # 0: Black
-        [0, 0, 1],  # 1: Blue
-        [1, 0, 0],  # 2: Red
-        [0, 1, 0],  # 3: Green
-    ]
-    return colors
-
-
-def plot_colored_masks(masks, colormap, save_path=None):
-    num_masks = len(masks)
-    cols = 10
-    rows = (num_masks + cols - 1) // cols
-
-    fig = plt.figure(figsize=(16, 2.0 * rows))
-    gs = fig.add_gridspec(rows, cols, hspace=0, wspace=0.1)
-    axes = []
-    for i in range(rows):
-        for j in range(cols):
-            axes.append(fig.add_subplot(gs[i, j]))
-
-    for i, mask in enumerate(masks):
-        if i < len(axes):
-            ax = axes[i]
-
-            h, w = mask.shape
-            rgb_img = np.zeros((h, w, 3))
-            for val in range(6):
-                rgb_img[mask == val] = colormap[val]
-
-            ax.imshow(rgb_img)
-            ax.set_title(f"Step {i}")
-            ax.axis("off")
-
-    for i in range(num_masks, len(axes)):
-        axes[i].axis("off")
-
-    plt.suptitle(
-        "A* Algorithm Learning Progression\n(Cyan=Open, Orange=Closed, Yellow=Current, Magenta=Path, Purple=Dead End)",
-        fontsize=14,
-        y=0.98,
-    )
-
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-
-    return fig
 
 
 def plot_solution_length_distribution(
@@ -786,10 +623,10 @@ def plot_solution_length_distribution(
 
 
 if __name__ == "__main__":
-    path = "data/maze_data_test_11/inputs.npy"
+    path = "data/maze_data_test_33/inputs.npy"
     inputs = np.load(path)
 
-    MAZE_INDEX = 2
+    MAZE_INDEX = 5
     maze = inputs[MAZE_INDEX]
     maze_solver = MazeSolver()
 
@@ -798,5 +635,5 @@ if __name__ == "__main__":
     # colors = colormap_for_astar()
     # fig = plot_colored_masks(masks, colors, save_path="figures/dfs_colored_masks.png")
 
-    masks_dfs = maze_solver.get_incremental_path_masks_bidirectional(maze, step=3)
-    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="bidirectional")
+    masks_dfs = maze_solver.get_bfs_masks(maze, step=3)
+    plot_maze_and_intermediate_masks_ultra_fast(maze, masks_dfs, type="bfsnew")
