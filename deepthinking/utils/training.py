@@ -13,7 +13,6 @@ import typing
 from dataclasses import dataclass
 from random import randrange
 
-import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -245,7 +244,6 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
                 f"Global Intermediate Loss: {interm_loss_global.item():.4f}, "
                 f"Alpha: {alpha:.3f}, "
                 f"Adaptive Alpha: {adaptive_alpha:.3f}, "
-                f"Avg Path Len: {np.mean(path_lens) if alpha != 0 else 0:.1f}"
             )
 
         if clip:
