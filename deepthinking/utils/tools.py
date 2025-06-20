@@ -48,21 +48,21 @@ def get_dataloaders(problem_args):
             test_data=problem_args.test_data,
         )
     elif problem_args.name == "mazes":
-        return prepare_maze_loader(
-            train_batch_size=problem_args.hyp.train_batch_size,
-            test_batch_size=problem_args.hyp.test_batch_size,
-            train_data=problem_args.train_data,
-            test_data=problem_args.test_data,
-        )
-        # return prepare_maze_loader_new(
-        #     dataset=problem_args.dataset,
-        #     maze_size_train=problem_args.train_data,
-        #     maze_size_test=problem_args.test_data,
+        # return prepare_maze_loader(
         #     train_batch_size=problem_args.hyp.train_batch_size,
         #     test_batch_size=problem_args.hyp.test_batch_size,
-        #     percolation=problem_args.percolation,
-        #     deadend_start=problem_args.deadend_start,
+        #     train_data=problem_args.train_data,
+        #     test_data=problem_args.test_data,
         # )
+        return prepare_maze_loader_new(
+            dataset=problem_args.dataset,
+            maze_size_train=problem_args.train_data,
+            maze_size_test=problem_args.test_data,
+            train_batch_size=problem_args.hyp.train_batch_size,
+            test_batch_size=problem_args.hyp.test_batch_size,
+            percolation=problem_args.percolation,
+            deadend_start=problem_args.deadend_start,
+        )
 
     elif problem_args.name == "chess":
         return prepare_chess_loader(

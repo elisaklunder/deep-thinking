@@ -245,7 +245,7 @@ def train_with_intermediate_supervision(net, loaders, train_setup, device):
                 f"Alpha: {alpha:.3f}, "
                 f"Adaptive Alpha: {adaptive_alpha:.3f}, "
             )
-
+            
         if clip:
             torch.nn.utils.clip_grad_norm_(net.parameters(), clip)
         optimizer.step()
